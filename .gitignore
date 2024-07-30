@@ -135,6 +135,9 @@ images/
 # SQL files.
 *.sql
 
+# SQL files.
+*.sql
+
 # Spyder project settings
 .spyderproject
 .spyproject
