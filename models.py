@@ -8,11 +8,9 @@ db_credentials = st.secrets["mysql"]
 
 DATABASE_URL = f'mysql+pymysql://{db_credentials["username"]}:{db_credentials["password"]}@{db_credentials["host"]}:{db_credentials["port"]}/{db_credentials["database"]}'
 
-
 engine = create_engine(DATABASE_URL)
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 Base = declarative_base()
-
 
 class Patient(Base):
     __tablename__ = 'patients'
