@@ -1,9 +1,24 @@
+import os
 from logging.config import fileConfig
 import streamlit as st
 from sqlalchemy import engine_from_config, pool
 from sqlalchemy import create_engine
 from alembic import context
-from models import Base  # Import your models here
+from src.models import Base
+# from models import Base  # Import your models here
+
+from dotenv import load_dotenv
+
+load_dotenv()
+
+username = os.environ.get("DB_USER")
+password = os.environ.get("DB_PASS")
+host = os.environ.get("DB_HOST")
+port = os.environ.get("DB_PORT")
+database = os.environ.get("DB_NAME")
+
+connection_string = f'mysql+pymysql://{username}:{password}@{host}:{port}/{database}'
+
 
 # this is the Alembic Config object, which provides
 # access to the values within the .ini file in use.
@@ -17,8 +32,11 @@ fileConfig(config.config_file_name)
 db_credentials = st.secrets["mysql"]
 DATABASE_URL = f'mysql+pymysql://{db_credentials["username"]}:{db_credentials["password"]}@{db_credentials["host"]}:{db_credentials["port"]}/{db_credentials["database"]}'
 
-# Set the SQLAlchemy URL
-config.set_main_option('sqlalchemy.url', DATABASE_URL)
+if db_credentials:
+    # Set the SQLAlchemy URL
+    config.set_main_option('sqlalchemy.url', DATABASE_URL)
+else:
+    config.set_main_option('sqlalchemy.url', connection_string)
 
 # add your model's MetaData object here
 # for 'autogenerate' support
