@@ -1,10 +1,14 @@
 import streamlit as st
 from sqlalchemy.orm import Session
-from models import SessionLocal, Patient, ClinicalHistory
+from models import SessionLocal, Patient, ClinicalHistory, Vitals
+from view.patients import Patients
+from view.vitals import PatientVitalsMeasurement
 import pandas as pd
 import os
 import random
 import string
+from datetime import datetime
+
 
 # Database session
 def get_db():
@@ -61,6 +65,28 @@ class Patients:
             return True
         return False
 
+# Dashboard Page
+def dashboard():
+    st.title("Dashboard")
+    col1, col2, col3 = st.columns(3)
+    with col1:
+        if st.button("Add New Patient", key="add_new_patient"):
+            st.session_state["page"] = "Add New Patient"
+    with col2:
+        if st.button("Select Patient", key="select_patient"):
+            st.session_state["page"] = "Select Patient"
+    with col3:
+        if st.button("Prescribe Medicine", key="prescribe_medicine"):
+            st.session_state["page"] = "Prescribe Medicine"
+    col4, col5, col6 = st.columns(3)
+    with col4:
+        if st.button("Check Vitals", key="check_vitals"):
+            st.session_state["page"] = "Check Vitals"
+    with col5:
+        if st.button("Add New Action", key="add_new_action"):
+            st.session_state["page"] = "Add New Action"
+
+
 # Add Patient Page
 def add_patient():
     st.title("Add Patient")
@@ -81,7 +107,7 @@ def add_patient():
             photo_path = save_uploaded_file(uploaded_file, name, phone_number, adhar_id)
 
     with tab2:
-        camera_photo = st.camera_input("Take a Photo")
+        camera_photo = st.camera_input("Take a Photo", disabled=True)
         if camera_photo:
             photo_path = save_uploaded_file(camera_photo, name, phone_number, adhar_id)
 
@@ -95,6 +121,7 @@ def add_patient():
             patients = Patients()
             patients.add(db, name, phone_number, home_address, email, adhar_id, driving_licence_number, photo_path)
             st.success("Patient added successfully")
+
 
 # Select and Delete Patient Page
 def select_delete_patient():
@@ -164,34 +191,100 @@ def prescribe_medicines():
     
     if selected_patient_name:
         patient_id = patient_names[selected_patient_name]
+        st.session_state["selected_patient_id"] = patient_id
         with next(get_db()) as db:
             patients = Patients()
             patient = patients.select(db, patient_id)
             if patient:
                 st.write(f"Prescribing medicines for {patient.name}")
 
+                # Display vitals
+                vitals_measurement = PatientVitalsMeasurement()
+                vitals = vitals_measurement.read(db, patient.id)
+                if vitals:
+                    latest_vitals = vitals[-1]
+                    st.write(f"Weight: {latest_vitals.weight_in_kg} kg")
+                    st.write(f"Height: {latest_vitals.height_in_cm} cm")
+                    st.write(f"Systolic BP: {latest_vitals.systolic_bp}")
+                    st.write(f"Diastolic BP: {latest_vitals.diastolic_bp}")
+                    st.write(f"Pulse: {latest_vitals.pulse}")
+                    st.write(f"Temperature: {latest_vitals.temperature_in_celsius} ℃")
+                    st.write(f"SpO2: {latest_vitals.oxygen_levels}")
+                else:
+                    st.warning("No vitals recorded. Redirecting to add vitals page.")
+                    st.session_state["page"] = "Check Vitals"
+                    st.experimental_rerun()
+
     medicine_name = st.text_input("Medicine Name")
     visit_date = st.date_input("Visit Date")
     notes = st.text_area("Notes")
 
-    if st.button("Save Prescription"):
+    if st.button("Prescribe"):
         with next(get_db()) as db:
             new_history = ClinicalHistory(patient_id=patient_id, visit_date=visit_date, notes=notes, prescribed_medicine=medicine_name)
             db.add(new_history)
             db.commit()
             st.success("Prescription saved successfully")
 
+
+# Check Vitals Page
+def check_vitals():
+    st.title("Check Vitals")
+
+    if "selected_patient_id" in st.session_state:
+        patient_id = st.session_state["selected_patient_id"]
+        with next(get_db()) as db:
+            patients = Patients()
+            patient = patients.select(db, patient_id)
+            if patient:
+                st.write(f"Checking vitals for {patient.name}")
+
+                weight_in_kg = st.number_input("Weight (kg)", min_value=0.0, format="%.2f")
+                weight_in_lbs = weight_in_kg * 2.20462
+                st.write(f"Weight (lbs): {weight_in_lbs:.2f}")
+
+                height_in_cm = st.number_input("Height (cm)", min_value=0.0, format="%.2f")
+                height_in_ft = height_in_cm / 30.48
+                height_in_inches = height_in_cm / 2.54
+                st.write(f"Height (ft): {height_in_ft:.2f}")
+                st.write(f"Height (inches): {height_in_inches:.2f}")
+
+                systolic_bp = st.number_input("Systolic BP", min_value=0)
+                diastolic_bp = st.number_input("Diastolic BP", min_value=0)
+                pulse = st.number_input("Pulse", min_value=0)
+                temperature_in_celsius = st.number_input("Temperature (℃)", min_value=0.0, format="%.2f")
+                temperature_in_fahrenheit = (temperature_in_celsius * 9/5) + 32
+                st.write(f"Temperature (℉): {temperature_in_fahrenheit:.2f}")
+
+                oxygen_levels = st.number_input("SpO2", min_value=0)
+                measurement_dt = datetime.now()
+
+                if st.button("Save"):
+                    with next(get_db()) as db:
+                        vitals_measurement = PatientVitalsMeasurement()
+                        vitals_measurement.add(db, patient_id, weight_in_kg, height_in_cm, systolic_bp, diastolic_bp, pulse, temperature_in_celsius, oxygen_levels, measurement_dt)
+                        st.success("Vitals saved successfully")
+    else:
+        st.warning("No patient selected. Please select a patient first.")
+        st.session_state["page"] = "Select Patient"
+        st.experimental_rerun()
+
+
 # Streamlit Navigation
 st.sidebar.title("Navigation")
-page = st.sidebar.radio("Attend", ["Patients", "View Patient History", "Prescribe Medicines"])
+page = st.sidebar.radio("Attend", ["Dashboard", "Patients", "View Patient History", "Prescribe Medicines", "Check Vitals"])
 
-if page == "Patients":
-    operation = st.sidebar.radio("Patient", ["Add New", "View"])
+if page == "Dashboard":
+    dashboard()
+elif page == "Patients":
+    operation = st.sidebar.radio("Patient", ["Add New", "Existing Patient"])
     if operation == "Add New":
         add_patient()
-    elif operation == "View":
+    elif operation == "Existing Patient":
         select_delete_patient()
 elif page == "View Patient History":
     view_patient_history()
 elif page == "Prescribe Medicines":
     prescribe_medicines()
+elif page == "Check Vitals":
+    check_vitals()

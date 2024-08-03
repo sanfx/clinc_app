@@ -1,5 +1,15 @@
 import streamlit as st
-from sqlalchemy import create_engine, Column, Integer, String, Text, Date, ForeignKey
+from sqlalchemy import (
+    create_engine,
+    Column,
+    Integer,
+    String,
+    Text,
+    Date,
+    ForeignKey,
+    Float,
+    DateTime
+)
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import sessionmaker, relationship
 
@@ -23,6 +33,7 @@ class Patient(Base):
     driving_licence_number = Column(String(20), nullable=True)
     photo = Column(String(255), nullable=True)
     clinical_history = relationship('ClinicalHistory', back_populates='patient')
+    vitals = relationship('Vitals', back_populates='patient')
 
 
 class ClinicalHistory(Base):
@@ -32,5 +43,20 @@ class ClinicalHistory(Base):
     visit_date = Column(Date, nullable=False)
     notes = Column(Text, nullable=True)
     patient = relationship('Patient', back_populates='clinical_history')
+
+
+class Vitals(Base):
+    __tablename__ = 'vitals'
+    id = Column(Integer, primary_key=True, index=True)
+    patient_id = Column(Integer, ForeignKey('patients.id'), nullable=False)
+    weight_in_kg = Column(Float, nullable=False)
+    height_in_cm = Column(Float, nullable=False)
+    systolic_bp = Column(Integer, nullable=False)
+    diastolic_bp = Column(Integer, nullable=False)
+    pulse = Column(Integer, nullable=False)
+    temperature_in_celsius = Column(Float, nullable=False)
+    oxygen_levels = Column(Integer, nullable=False)
+    measurement_dt = Column(DateTime, nullable=False, unique=True)
+    patient = relationship('Patient', back_populates='vitals')
 
 Base.metadata.create_all(bind=engine)
