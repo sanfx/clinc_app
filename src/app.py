@@ -6,7 +6,6 @@ import os
 import random
 import string
 
-
 # Database session
 def get_db():
     db = SessionLocal()
@@ -15,12 +14,10 @@ def get_db():
     finally:
         db.close()
 
-
 # Generate random string
 def generate_random_string(length=10):
     letters_and_digits = string.ascii_letters + string.digits
     return ''.join(random.choice(letters_and_digits) for i in range(length))
-
 
 # Save uploaded file
 def save_uploaded_file(uploaded_file, name, phone, adhar):
@@ -31,6 +28,38 @@ def save_uploaded_file(uploaded_file, name, phone, adhar):
         f.write(uploaded_file.getbuffer())
     return file_path
 
+# Patients Class
+class Patients:
+    def __init__(self):
+        pass
+
+    def add(self, db: Session, name, phone_number, home_address, email, adhar_id, driving_licence_number, photo_path):
+        new_patient = Patient(
+            name=name,
+            phone_number=phone_number,
+            home_address=home_address,
+            email=email,
+            adhar_id=adhar_id,
+            driving_licence_number=driving_licence_number,
+            photo=photo_path
+        )
+        db.add(new_patient)
+        db.commit()
+        return new_patient
+
+    def select(self, db: Session, patient_id):
+        return db.query(Patient).filter(Patient.id == patient_id).first()
+
+    def delete(self, db: Session, patient_id):
+        patient = db.query(Patient).filter(Patient.id == patient_id).first()
+        if patient:
+            # Delete the associated image
+            if patient.photo and os.path.exists(patient.photo):
+                os.remove(patient.photo)
+            db.delete(patient)
+            db.commit()
+            return True
+        return False
 
 # Add Patient Page
 def add_patient():
@@ -43,34 +72,62 @@ def add_patient():
     adhar_id = st.text_input("Adhar ID")
     driving_licence_number = st.text_input("Driving Licence Number")
 
-    uploaded_file = st.file_uploader("Upload Photo", type=["png", "jpg", "jpeg"])
-    camera_photo = st.camera_input("Take a Photo")
+    tab1, tab2 = st.tabs(["Browse", "Take Photo"])
+
+    photo_path = None
+    with tab1:
+        uploaded_file = st.file_uploader("Upload Photo", type=["png", "jpg", "jpeg"])
+        if uploaded_file:
+            photo_path = save_uploaded_file(uploaded_file, name, phone_number, adhar_id)
+
+    with tab2:
+        camera_photo = st.camera_input("Take a Photo")
+        if camera_photo:
+            photo_path = save_uploaded_file(camera_photo, name, phone_number, adhar_id)
 
     if st.button("Add Patient"):
         if not phone_number:
             phone_number = generate_random_string(10)
         if not adhar_id:
             adhar_id = generate_random_string(12)
-        
-        photo_path = None
-        if uploaded_file:
-            photo_path = save_uploaded_file(uploaded_file, name, phone_number, adhar_id)
-        elif camera_photo:
-            photo_path = save_uploaded_file(camera_photo, name, phone_number, adhar_id)
 
         with next(get_db()) as db:
-            new_patient = Patient(
-                name=name,
-                phone_number=phone_number,
-                home_address=home_address,
-                email=email,
-                adhar_id=adhar_id,
-                driving_licence_number=driving_licence_number,
-                photo=photo_path
-            )
-            db.add(new_patient)
-            db.commit()
+            patients = Patients()
+            patients.add(db, name, phone_number, home_address, email, adhar_id, driving_licence_number, photo_path)
             st.success("Patient added successfully")
+
+# Select and Delete Patient Page
+def select_delete_patient():
+    st.title("View Patient")
+
+    with next(get_db()) as db:
+        patients = db.query(Patient).all()
+        patient_names = {patient.name: patient.id for patient in patients}
+    
+    selected_patient_name = st.selectbox("Select Patient", list(patient_names.keys()), key="selected_patient")
+    
+    if selected_patient_name:
+        patient_id = patient_names[selected_patient_name]
+        with next(get_db()) as db:
+            patients = Patients()
+            patient = patients.select(db, patient_id)
+            if patient:
+                st.write(f"Name: {patient.name}")
+                st.write(f"Phone Number: {patient.phone_number}")
+                st.write(f"Home Address: {patient.home_address}")
+                st.write(f"Email: {patient.email}")
+                st.write(f"Adhar ID: {patient.adhar_id}")
+                st.write(f"Driving Licence Number: {patient.driving_licence_number}")
+                if patient.photo:
+                    st.image(patient.photo, caption=f"{patient.name}'s Photo")
+
+                if st.button("Delete Patient"):
+                    if st.confirm("Are you sure you want to delete this patient? This action cannot be undone."):
+                        with next(get_db()) as db:
+                            if patients.delete(db, patient_id):
+                                st.success("Patient deleted successfully")
+                            else:
+                                st.error("Failed to delete patient")
 
 
 # View Patient Clinical History Page
@@ -94,19 +151,24 @@ def view_patient_history():
                 st.session_state["selected_patient_id"] = patient.id
                 st.experimental_rerun()
 
+
 # Prescribe Medicines Page
 def prescribe_medicines():
     st.title("Prescribe Medicines")
 
-    if "selected_patient_id" not in st.session_state:
-        st.warning("Please select a patient first.")
-        return
-    
-    patient_id = st.session_state["selected_patient_id"]
-    
     with next(get_db()) as db:
-        patient = db.query(Patient).filter(Patient.id == patient_id).first()
-        st.write(f"Prescribing medicines for {patient.name}")
+        patients = db.query(Patient).all()
+        patient_names = {patient.name: patient.id for patient in patients}
+    
+    selected_patient_name = st.selectbox("Select Patient", list(patient_names.keys()), key="selected_patient")
+    
+    if selected_patient_name:
+        patient_id = patient_names[selected_patient_name]
+        with next(get_db()) as db:
+            patients = Patients()
+            patient = patients.select(db, patient_id)
+            if patient:
+                st.write(f"Prescribing medicines for {patient.name}")
 
     medicine_name = st.text_input("Medicine Name")
     visit_date = st.date_input("Visit Date")
@@ -114,17 +176,21 @@ def prescribe_medicines():
 
     if st.button("Save Prescription"):
         with next(get_db()) as db:
-            new_history = ClinicalHistory(patient_id=patient_id, visit_date=visit_date, notes=notes)
+            new_history = ClinicalHistory(patient_id=patient_id, visit_date=visit_date, notes=notes, prescribed_medicine=medicine_name)
             db.add(new_history)
             db.commit()
             st.success("Prescription saved successfully")
 
 # Streamlit Navigation
 st.sidebar.title("Navigation")
-page = st.sidebar.radio("Go to", ["Add Patient", "View Patient History", "Prescribe Medicines"])
+page = st.sidebar.radio("Attend", ["Patients", "View Patient History", "Prescribe Medicines"])
 
-if page == "Add Patient":
-    add_patient()
+if page == "Patients":
+    operation = st.sidebar.radio("Patient", ["Add New", "View"])
+    if operation == "Add New":
+        add_patient()
+    elif operation == "View":
+        select_delete_patient()
 elif page == "View Patient History":
     view_patient_history()
 elif page == "Prescribe Medicines":
